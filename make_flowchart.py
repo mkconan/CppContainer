@@ -141,7 +141,6 @@ def make_chart_structure(analysys_result: list[str], func_name="main"):
             if can_find_process:
                 can_find_process = False
                 chart_struct["flow_depth"] = flow_depth
-                chart_struct["source_id"] = brach_root_id if brach_root_id is not None else None
                 chart_struct["id"] = id
                 id += 1
                 chart_struct["if_branch_finish"] = True if is_if_branch_finish else False
@@ -201,10 +200,7 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                 if_flow["is_draw_flow"] = True
 
             # 矢印を描画する
-            if if_flow["source_id"] is not None:
-                render_param = {"id": arrow_id, "source_id": if_flow["source_id"], "target_id": if_flow["id"]}
-            else:
-                render_param = {"id": arrow_id, "source_id": if_prev_id, "target_id": if_flow["id"]}
+            render_param = {"id": arrow_id, "source_id": if_prev_id, "target_id": if_flow["id"]}
             f.write(template_dict["arrow"].render(render_param))
 
             if_prev_id = if_flow["id"]
@@ -244,9 +240,6 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                     "y": start_y + IF_FLOW_H // 2,
                 }
                 f.write(template_dict["else_start_arrow"].render(render_param))
-            elif if_flow["source_id"] is not None:
-                render_param = {"id": arrow_id, "source_id": if_flow["source_id"], "target_id": if_flow["id"]}
-                f.write(template_dict["arrow"].render(render_param))
             else:
                 render_param = {"id": arrow_id, "source_id": if_prev_id, "target_id": if_flow["id"]}
                 f.write(template_dict["arrow"].render(render_param))
@@ -308,10 +301,7 @@ def make_chart_xml(analysys_result):
                 flow["is_draw_flow"] = True
 
                 # 矢印を描画する
-                if flow["source_id"] is not None:
-                    render_param = {"id": arrow_id, "source_id": flow["source_id"], "target_id": flow["id"]}
-                else:
-                    render_param = {"id": arrow_id, "source_id": prev_id, "target_id": flow["id"]}
+                render_param = {"id": arrow_id, "source_id": prev_id, "target_id": flow["id"]}
                 f.write(template_dict["arrow"].render(render_param))
 
                 prev_id = flow["id"]
