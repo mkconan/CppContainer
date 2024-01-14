@@ -21,6 +21,8 @@ class FlowType(Enum):
     DEFINED_PROCESS = 6
 
 
+template_dict = {}
+
 template_flow_list = [
     "flow_start",
     "flow_end",
@@ -34,14 +36,14 @@ template_flow_list = [
 
 
 def load_templates():
+    global template_dict
     env = Environment(loader=FileSystemLoader("templates"))
 
-    template_dict = {}
     for flow in template_flow_list:
         template = env.get_template(f"{flow}.j2")
         template_dict[flow] = template
 
-    return template_dict
+    return
 
 
 def read_analysys_file(file_path: str):
@@ -141,7 +143,8 @@ def make_chart_structure(analysys_result: list[str], func_name="main"):
     return chart_struct_dict_list
 
 
-def make_if_chart_xml(template_dict, if_chiild_flows, if_depth, start_x, start_y, start_arrow_id, file_stream):
+def make_if_chart_xml(if_chiild_flows, if_depth, start_x, start_y, start_arrow_id, file_stream):
+    global template_dict
     if_x, if_y = start_x, start_y
     else_x = start_x + IF_FLOW_W + MARGIN
     else_y = start_y + IF_FLOW_H // 2 + ARROW_L
@@ -174,13 +177,11 @@ def make_if_chart_xml(template_dict, if_chiild_flows, if_depth, start_x, start_y
 
             # if側に出てきた場合
             if if_flow["flow_depth"] == if_depth:
-                if_y, arrow_id = make_if_chart_xml(
-                    template_dict, if_child_flows, if_depth + 1, if_x, if_y, arrow_id + 1, file_stream
-                )
+                if_y, arrow_id = make_if_chart_xml(if_child_flows, if_depth + 1, if_x, if_y, arrow_id + 1, file_stream)
             # else側に出てきた場合
             elif if_flow["flow_depth"] == if_depth + 1:
                 if_y, arrow_id = make_if_chart_xml(
-                    template_dict, if_child_flows, if_depth + 1, else_x, else_y, arrow_id + 1, file_stream
+                    if_child_flows, if_depth + 1, else_x, else_y, arrow_id + 1, file_stream
                 )
 
         # if側の作成
@@ -231,7 +232,8 @@ def make_if_chart_xml(template_dict, if_chiild_flows, if_depth, start_x, start_y
     return end_y, end_arrow_id
 
 
-def make_chart_xml(template_dict: dict, analysys_result):
+def make_chart_xml(analysys_result):
+    global template_dict
     flows = make_chart_structure(analysys_result)
     pprint(flows)
 
@@ -256,7 +258,7 @@ def make_chart_xml(template_dict: dict, analysys_result):
                         if_child_flows.append(if_child_flow)
                         flows.remove(if_child_flow)
 
-                y, arrow_id = make_if_chart_xml(template_dict, if_child_flows, 0, x, y, arrow_id + 1, f)
+                y, arrow_id = make_if_chart_xml(if_child_flows, 0, x, y, arrow_id + 1, f)
 
             elif flow["flow_depth"] == -1:
                 render_param = {"id": flow["id"], "text": flow["val"], "x": x, "y": y}
@@ -281,9 +283,9 @@ def make_chart_xml(template_dict: dict, analysys_result):
 
 
 def main():
-    template_dict = load_templates()
+    load_templates()
     analysys_result = read_analysys_file("./result_analysis.yaml")
-    make_chart_xml(template_dict, analysys_result)
+    make_chart_xml(analysys_result)
 
 
 if __name__ == "__main__":
