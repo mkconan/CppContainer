@@ -118,11 +118,12 @@ def make_chart_structure(analysys_result: list[str], func_name="main"):
 
             # IF分岐の終端
             elif len(if_branch_start_depth_stack):
-                if depth <= if_branch_start_depth_stack[-1]:
-                    flow_depth -= 1
-                    if_branch_start_depth_stack.pop()
-                    is_if_branch_finish = True
-                    brach_root_id = id
+                for d in reversed(if_branch_start_depth_stack):
+                    if depth <= d:
+                        flow_depth -= 1
+                        if_branch_start_depth_stack.pop()
+                        is_if_branch_finish = True
+                        brach_root_id = id
 
             # ELSE節の最初のプロセス
             if "ELSE_STMT" in flow_type:
@@ -132,9 +133,10 @@ def make_chart_structure(analysys_result: list[str], func_name="main"):
 
             # ELSE節の終端
             elif len(else_branch_start_depth_stack):
-                if depth <= if_branch_start_depth_stack[-1]:
-                    flow_depth -= 1
-                    else_branch_start_depth_stack.pop()
+                for d in reversed(else_branch_start_depth_stack):
+                    if depth <= d:
+                        flow_depth -= 1
+                        else_branch_start_depth_stack.pop()
 
             if can_find_process:
                 can_find_process = False
@@ -144,6 +146,7 @@ def make_chart_structure(analysys_result: list[str], func_name="main"):
                 id += 1
                 chart_struct["if_branch_finish"] = True if is_if_branch_finish else False
                 chart_struct["else_start"] = True if is_branch_start else False
+                chart_struct["is_draw_flow"] = False
                 chart_struct_dict_list.append(chart_struct)
 
     return chart_struct_dict_list
@@ -163,7 +166,6 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
     f.write(template_dict[f"{if_start_flow['type'].name.lower()}"].render(render_param))
 
     if_prev_id = if_start_flow["id"]
-    else_prev_id = None
     if_y += IF_FLOW_H + ARROW_L
     arrow_id += 1
 
@@ -172,32 +174,31 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
         if f_i == 0:
             continue
 
-        # IFが出てきた場合は再帰的にフロー図を作る
-        if if_flow["type"] == FlowType.IF:
-            # 最初のifフローは入れる
-            if_child_flows = []
-            # if文の中にあるフローのリストを作成する
-            for if_child_flow in flows[f_i:]:
-                if if_child_flow["flow_depth"] >= if_depth + 1:
-                    if_child_flows.append(if_child_flow)
-                    flows.remove(if_child_flow)
-
-            # if側に出てきた場合
-            if if_flow["flow_depth"] == if_depth:
-                if_y, arrow_id = make_if_chart_xml(if_child_flows, if_depth + 1, if_x, if_y, arrow_id + 1, f)
-            # else側に出てきた場合
-            elif if_flow["flow_depth"] == if_depth + 1:
-                else_y, arrow_id = make_if_chart_xml(if_child_flows, if_depth + 1, else_x, else_y, arrow_id + 1, f)
+        if if_flow["is_draw_flow"] == True:
+            continue
 
         # if側の作成
-        elif if_flow["flow_depth"] == if_depth:
-            render_param = {
-                "id": if_flow["id"],
-                "text": if_flow["val"],
-                "x": if_x,
-                "y": if_y,
-            }
-            f.write(template_dict[f"{if_flow['type'].name.lower()}"].render(render_param))
+        if if_flow["flow_depth"] == if_depth:
+            # IFが出てきた場合は再帰的にフロー図を作る
+            if if_flow["type"] == FlowType.IF:
+                # 最初のifフローは入れる
+                if_child_flows = []
+                # if文の中にあるフローのリストを作成する
+                for if_child_flow in flows[f_i:]:
+                    if if_child_flow["flow_depth"] >= if_depth + 1:
+                        if_child_flows.append(if_child_flow)
+
+                if_y, arrow_id = make_if_chart_xml(if_child_flows, if_depth + 1, if_x, if_y, arrow_id + 1, f)
+
+            else:
+                render_param = {
+                    "id": if_flow["id"],
+                    "text": if_flow["val"],
+                    "x": if_x,
+                    "y": if_y,
+                }
+                f.write(template_dict[f"{if_flow['type'].name.lower()}"].render(render_param))
+                if_flow["is_draw_flow"] = True
 
             # 矢印を描画する
             if if_flow["source_id"] is not None:
@@ -212,13 +213,24 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
 
         # else側の作成
         elif if_flow["flow_depth"] == if_depth + 1:
-            render_param = {
-                "id": if_flow["id"],
-                "text": if_flow["val"],
-                "x": else_x,
-                "y": else_y,
-            }
-            f.write(template_dict[f"{if_flow['type'].name.lower()}"].render(render_param))
+            # IFが出てきた場合は再帰的にフロー図を作る
+            if if_flow["type"] == FlowType.IF:
+                # 最初のifフローは入れる
+                if_child_flows = []
+                # if文の中にあるフローのリストを作成する
+                for if_child_flow in flows[f_i:]:
+                    if if_child_flow["flow_depth"] >= if_depth + 1:
+                        if_child_flows.append(if_child_flow)
+                else_y, arrow_id = make_if_chart_xml(if_child_flows, if_depth + 1, else_x, else_y, arrow_id + 1, f)
+            else:
+                render_param = {
+                    "id": if_flow["id"],
+                    "text": if_flow["val"],
+                    "x": else_x,
+                    "y": else_y,
+                }
+                f.write(template_dict[f"{if_flow['type'].name.lower()}"].render(render_param))
+                if_flow["is_draw_flow"] = True
 
             # 矢印を描画する
             # 最初のelse節の場合
@@ -275,13 +287,15 @@ def make_chart_xml(analysys_result):
         for f_i, flow in enumerate(flows):
             # プロセスを描画する
             # IFが出てきた場合は再帰的にフロー図を作る
+            if flow["is_draw_flow"] == True:
+                continue
+
             if flow["type"] == FlowType.IF and flow["flow_depth"] == 0:
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
                     if if_child_flow["flow_depth"] >= 0:
                         if_child_flows.append(if_child_flow)
-                        flows.remove(if_child_flow)
 
                 y, arrow_id = make_if_chart_xml(if_child_flows, 0, x, y, arrow_id + 1, f)
                 render_param = {"id": arrow_id, "source_id": prev_id, "target_id": flow["id"]}
@@ -291,6 +305,7 @@ def make_chart_xml(analysys_result):
             elif flow["flow_depth"] == -1:
                 render_param = {"id": flow["id"], "text": flow["val"], "x": x, "y": y}
                 f.write(template_dict[f"{flow['type'].name.lower()}"].render(render_param))
+                flow["is_draw_flow"] = True
 
                 # 矢印を描画する
                 if flow["source_id"] is not None:
