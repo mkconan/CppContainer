@@ -165,6 +165,7 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
     f.write(template_dict[f"{if_start_flow['type'].name.lower()}"].render(render_param))
 
     if_prev_id = if_start_flow["id"]
+    else_prev_id = None
     if_y += IF_FLOW_H + ARROW_L
     arrow_id += 1
 
@@ -187,7 +188,9 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                     if if_child_flow["flow_depth"] >= if_depth + 1:
                         if_child_flows.append(if_child_flow)
 
-                if_y, arrow_id = make_if_chart_xml(if_child_flows, if_depth + 1, if_x, if_y, arrow_id + 1, f)
+                if_y, arrow_id, if_prev_id = make_if_chart_xml(
+                    if_child_flows, if_depth + 1, if_x, if_y, arrow_id + 1, f
+                )
 
             else:
                 render_param = {
@@ -217,7 +220,9 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                 for if_child_flow in flows[f_i:]:
                     if if_child_flow["flow_depth"] >= if_depth + 1:
                         if_child_flows.append(if_child_flow)
-                else_y, arrow_id = make_if_chart_xml(if_child_flows, if_depth + 1, else_x, else_y, arrow_id + 1, f)
+                else_y, arrow_id, else_prev_id = make_if_chart_xml(
+                    if_child_flows, if_depth + 1, else_x, else_y, arrow_id + 1, f
+                )
             else:
                 render_param = {
                     "id": if_flow["id"],
@@ -241,17 +246,31 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                 }
                 f.write(template_dict["else_start_arrow"].render(render_param))
             else:
-                render_param = {"id": arrow_id, "source_id": if_prev_id, "target_id": if_flow["id"]}
+                render_param = {"id": arrow_id, "source_id": else_prev_id, "target_id": if_flow["id"]}
                 f.write(template_dict["arrow"].render(render_param))
 
-            if_prev_id = if_flow["id"]
+            if if_flow["type"] != FlowType.IF:
+                else_prev_id = if_flow["id"]
             else_y += NORMAL_FLOW_H + ARROW_L
             arrow_id += 1
 
+    # ifルートとelseルートでyが長い方を矢印の終端とする
     end_y = if_y if if_y > else_y else else_y
+
+    # elseルートから戻る矢印を描画する
+    if else_prev_id is not None:
+        render_param = {
+            "id": arrow_id,
+            "source_id": else_prev_id,
+            "target_x": start_x + NORMAL_FLOW_W // 2,
+            "target_y": end_y - 20,
+        }
+        f.write(template_dict["else_end_arrow"].render(render_param))
+        arrow_id += 1
+
     end_arrow_id = arrow_id
 
-    return end_y, end_arrow_id
+    return end_y, end_arrow_id, if_prev_id
 
 
 def make_chart_xml(analysys_result):
@@ -290,10 +309,9 @@ def make_chart_xml(analysys_result):
                     if if_child_flow["flow_depth"] >= 0:
                         if_child_flows.append(if_child_flow)
 
-                y, arrow_id = make_if_chart_xml(if_child_flows, 0, x, y, arrow_id + 1, f)
                 render_param = {"id": arrow_id, "source_id": prev_id, "target_id": flow["id"]}
                 f.write(template_dict["arrow"].render(render_param))
-                arrow_id += 1
+                y, arrow_id, prev_id = make_if_chart_xml(if_child_flows, 0, x, y, arrow_id + 1, f)
 
             elif flow["flow_depth"] == -1:
                 render_param = {"id": flow["id"], "text": flow["val"], "x": x, "y": y}
