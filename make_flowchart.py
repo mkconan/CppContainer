@@ -110,7 +110,14 @@ def make_chart_structure(analysys_result: List[str], func_name="main"):
 
             # IF分岐の始端
             if "IF_STMT" in flow_type:
-                flow_depth += 1
+                if len(else_branch_start_depth_stack) > 0 and else_branch_start_depth_stack[-1] == depth - 1:
+                    flow_depth += 1
+                elif len(if_branch_start_depth_stack) == 0:
+                    flow_depth += 1
+                else:
+                    flow_depth += 2
+                    if_branch_start_depth_stack.append(depth)
+
                 if_branch_start_depth_stack.append(depth)
                 chart_struct = {}
                 chart_struct["type"] = FlowType.IF
@@ -202,17 +209,17 @@ def make_if_chart_xml(
             if_y += NORMAL_FLOW_H + ARROW_L
 
         # elseルートの作成
-        elif if_flow["flow_depth"] == if_depth + 1:
+        elif if_flow["flow_depth"] >= if_depth + 1:
             # IFが出てきた場合は再帰的にフロー図を作る
             if if_flow["type"] == FlowType.IF:
                 # 最初のifフローは入れる
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_child_flow["flow_depth"] >= if_depth + 1:
+                    if if_child_flow["flow_depth"] >= if_depth + 2:
                         if_child_flows.append(if_child_flow)
                 else_y, arrow_id, else_prev_id = make_if_chart_xml(
-                    if_child_flows, if_depth + 1, else_x, else_y, arrow_id, f
+                    if_child_flows, if_depth + 2, else_x, else_y, arrow_id, f
                 )
             else:
                 draw_node(if_flow, else_x, else_y, f)
@@ -258,6 +265,7 @@ def make_if_chart_xml(
 
 def make_chart_xml(analysys_result: List[str]):
     flows = make_chart_structure(analysys_result)
+    # pprint(flows)
 
     with open("out/automake.xml", mode="w") as f:
         start_x, start_y = 80, 40
@@ -272,9 +280,6 @@ def make_chart_xml(analysys_result: List[str]):
         render_param = {"x": start_x, "y": start_y}
         f.write(template_dict["flow_start"].render(render_param))
         arrow_id = draw_arrow(arrow_id, start_id, flows[0]["id"], f)
-
-        # flow図の最後の部分を描画
-        pre_end_flow_id = flows[-1]["id"]
 
         for f_i, flow in enumerate(flows):
             # プロセスを描画する
@@ -304,7 +309,7 @@ def make_chart_xml(analysys_result: List[str]):
                 y += NORMAL_FLOW_H + ARROW_L
 
         # flow図の最後の部分を描画
-        _ = draw_arrow(arrow_id, pre_end_flow_id, end_id, f)
+        _ = draw_arrow(arrow_id, flows[-1]["id"], end_id, f)
         render_param = {"id": end_id, "x": x, "y": y}
         f.write(template_dict["flow_end"].render(render_param))
 
@@ -321,7 +326,7 @@ def draw_node(flow, x: int, y: int, f: TextIOWrapper):
     if flow["is_draw_flow"] != True:
         render_param = {
             "id": flow["id"],
-            "text": flow["val"],
+            "text": flow["val"] + f": {flow['flow_depth']}",
             "x": x,
             "y": y,
         }
@@ -342,8 +347,6 @@ def draw_arrow(arrow_id: int, source_id: int, target_id: int, f: TextIOWrapper) 
     Returns:
         int: インクリメントした矢印ID
     """
-    if source_id == target_id:
-        pass
     render_param = {"id": arrow_id, "source_id": source_id, "target_id": target_id}
     f.write(template_dict["arrow"].render(render_param))
     return arrow_id + 1
