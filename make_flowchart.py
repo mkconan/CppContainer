@@ -4,6 +4,7 @@ import re
 from enum import Enum
 from pprint import pprint
 from io import TextIOWrapper
+from typing import Tuple, List
 
 DEFAULT_DEPTH = 3
 IF_FLOW_W = 240
@@ -43,6 +44,7 @@ template_flow_list = [
 
 
 def load_templates():
+    """フローのテンプレートの読み込み"""
     global template_dict
     env = Environment(loader=FileSystemLoader("templates"))
 
@@ -64,7 +66,7 @@ def get_depth(analysis: str):
     return depth
 
 
-def make_chart_structure(analysys_result: list[str], func_name="main"):
+def make_chart_structure(analysys_result: List[str], func_name="main"):
     chart_struct_dict_list = []
     is_detect_func = False
     for_loop_start_depth_stack = []
@@ -149,8 +151,9 @@ def make_chart_structure(analysys_result: list[str], func_name="main"):
     return chart_struct_dict_list
 
 
-def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
-    global template_dict
+def make_if_chart_xml(
+    flows: List[dict], if_depth: int, start_x: int, start_y: int, start_arrow_id: int, f: TextIOWrapper
+) -> Tuple[int, int, int]:
     if_x, if_y = start_x, start_y
     else_x = start_x + IF_FLOW_W + MARGIN
     else_y = start_y + IF_FLOW_H // 2 + ARROW_L
@@ -159,10 +162,9 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
 
     # リストの先頭はIF
     if_start_flow = flows[0]
-    render_param = {"id": if_start_flow["id"], "text": if_start_flow["val"], "x": if_x, "y": if_y}
-    f.write(template_dict[f"{if_start_flow['type'].name.lower()}"].render(render_param))
+    draw_node(if_start_flow, if_x, if_y, f)
 
-    if_prev_id = if_start_flow["id"]
+    if_prev_id: int = if_start_flow["id"]
     else_prev_id = None
     if_y += IF_FLOW_H + ARROW_L
     arrow_id += 1
@@ -175,7 +177,7 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
         if if_flow["is_draw_flow"] == True:
             continue
 
-        # if側の作成
+        # ifルートの作成
         if if_flow["flow_depth"] == if_depth:
             # IFが出てきた場合は再帰的にフロー図を作る
             if if_flow["type"] == FlowType.IF:
@@ -191,23 +193,15 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                 )
 
             else:
-                render_param = {
-                    "id": if_flow["id"],
-                    "text": if_flow["val"],
-                    "x": if_x,
-                    "y": if_y,
-                }
-                f.write(template_dict[f"{if_flow['type'].name.lower()}"].render(render_param))
-                if_flow["is_draw_flow"] = True
+                draw_node(if_flow, if_x, if_y, f)
 
             # 矢印を描画する
-            draw_arrow(arrow_id, if_prev_id, if_flow["id"], f)
+            arrow_id = draw_arrow(arrow_id, if_prev_id, if_flow["id"], f)
 
             if_prev_id = if_flow["id"]
             if_y += NORMAL_FLOW_H + ARROW_L
-            arrow_id += 1
 
-        # else側の作成
+        # elseルートの作成
         elif if_flow["flow_depth"] == if_depth + 1:
             # IFが出てきた場合は再帰的にフロー図を作る
             if if_flow["type"] == FlowType.IF:
@@ -218,17 +212,10 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                     if if_child_flow["flow_depth"] >= if_depth + 1:
                         if_child_flows.append(if_child_flow)
                 else_y, arrow_id, else_prev_id = make_if_chart_xml(
-                    if_child_flows, if_depth + 1, else_x, else_y, arrow_id + 1, f
+                    if_child_flows, if_depth + 1, else_x, else_y, arrow_id, f
                 )
             else:
-                render_param = {
-                    "id": if_flow["id"],
-                    "text": if_flow["val"],
-                    "x": else_x,
-                    "y": else_y,
-                }
-                f.write(template_dict[f"{if_flow['type'].name.lower()}"].render(render_param))
-                if_flow["is_draw_flow"] = True
+                draw_node(if_flow, else_x, else_y, f)
 
             # 矢印を描画する
             # 最初のelse節の場合
@@ -242,13 +229,13 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
                     "y": start_y + IF_FLOW_H // 2,
                 }
                 f.write(template_dict["else_start_arrow"].render(render_param))
+                arrow_id += 1
             else:
-                draw_arrow(arrow_id, else_prev_id, if_flow["id"], f)
+                arrow_id = draw_arrow(arrow_id, else_prev_id, if_flow["id"], f)
 
             if if_flow["type"] != FlowType.IF:
                 else_prev_id = if_flow["id"]
             else_y += NORMAL_FLOW_H + ARROW_L
-            arrow_id += 1
 
     # ifルートとelseルートでyが長い方を矢印の終端とする
     end_y = if_y if if_y > else_y else else_y
@@ -269,10 +256,8 @@ def make_if_chart_xml(flows, if_depth, start_x, start_y, start_arrow_id, f):
     return end_y, end_arrow_id, if_prev_id
 
 
-def make_chart_xml(analysys_result):
-    global template_dict
+def make_chart_xml(analysys_result: List[str]):
     flows = make_chart_structure(analysys_result)
-    pprint(flows)
 
     with open("out/automake.xml", mode="w") as f:
         start_x, start_y = 80, 40
@@ -280,13 +265,13 @@ def make_chart_xml(analysys_result):
         prev_id = -1
         x = start_x
         y = start_y + NORMAL_FLOW_H + ARROW_L
-        arrow_id = 1000
-        start_arrow_id = 2000
+        start_arrow_id = 1000
+        arrow_id = start_arrow_id
 
         # flow図の最初の部分を描画
         render_param = {"x": start_x, "y": start_y}
         f.write(template_dict["flow_start"].render(render_param))
-        draw_arrow(start_arrow_id, start_id, flows[0]["id"], f)
+        arrow_id = draw_arrow(arrow_id, start_id, flows[0]["id"], f)
 
         # flow図の最後の部分を描画
         pre_end_flow_id = flows[-1]["id"]
@@ -306,30 +291,62 @@ def make_chart_xml(analysys_result):
                     if if_child_flow["flow_depth"] >= 0:
                         if_child_flows.append(if_child_flow)
 
-                draw_arrow(arrow_id, prev_id, flow["id"], f)
-                y, arrow_id, prev_id = make_if_chart_xml(if_child_flows, 0, x, y, arrow_id + 1, f)
+                arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
+                y, arrow_id, prev_id = make_if_chart_xml(if_child_flows, 0, x, y, arrow_id, f)
 
             elif flow["flow_depth"] == -1:
-                render_param = {"id": flow["id"], "text": flow["val"], "x": x, "y": y}
-                f.write(template_dict[f"{flow['type'].name.lower()}"].render(render_param))
-                flow["is_draw_flow"] = True
+                draw_node(flow, x, y, f)
 
                 # 矢印を描画する
-                draw_arrow(arrow_id, prev_id, flow["id"], f)
+                arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
 
                 prev_id = flow["id"]
                 y += NORMAL_FLOW_H + ARROW_L
-                arrow_id += 1
 
         # flow図の最後の部分を描画
-        draw_arrow(arrow_id, pre_end_flow_id, end_id, f)
+        _ = draw_arrow(arrow_id, pre_end_flow_id, end_id, f)
         render_param = {"id": end_id, "x": x, "y": y}
         f.write(template_dict["flow_end"].render(render_param))
 
 
-def draw_arrow(id: int, source_id: int, target_id: int, f: TextIOWrapper):
-    render_param = {"id": id, "source_id": source_id, "target_id": target_id}
+def draw_node(flow, x: int, y: int, f: TextIOWrapper):
+    """Node（フローの要素）を描画する
+
+    Args:
+        flow (_type_): フローの辞書
+        x (int): 描画位置の左上x座標
+        y (int): 描画位置の左上y座標
+        f (TextIOWrapper): ファイルストリーム
+    """
+    if flow["is_draw_flow"] != True:
+        render_param = {
+            "id": flow["id"],
+            "text": flow["val"],
+            "x": x,
+            "y": y,
+        }
+        f.write(template_dict[f"{flow['type'].name.lower()}"].render(render_param))
+        # 描画済であることを記録する
+        flow["is_draw_flow"] = True
+
+
+def draw_arrow(arrow_id: int, source_id: int, target_id: int, f: TextIOWrapper) -> int:
+    """矢印を描画する
+
+    Args:
+        arrow_id (int): 矢印のID
+        source_id (int): 矢元のノードID
+        target_id (int): 矢先のノードID
+        f (TextIOWrapper): ファイルストリーム
+
+    Returns:
+        int: インクリメントした矢印ID
+    """
+    if source_id == target_id:
+        pass
+    render_param = {"id": arrow_id, "source_id": source_id, "target_id": target_id}
     f.write(template_dict["arrow"].render(render_param))
+    return arrow_id + 1
 
 
 def main():
