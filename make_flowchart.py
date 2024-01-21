@@ -66,29 +66,39 @@ def get_depth(analysis: str):
     return depth
 
 
-def make_chart_structure(analysys_result: List[str], func_name="main"):
+def get_line_no(analysis: str):
+    line = re.search(r"@[0-9]*", analysis).group()
+    line = int(line[1:])
+    return line
+
+
+def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
     chart_struct_dict_list = []
     is_detect_func = False
     for_loop_start_depth_stack = []
     if_branch_start_depth_stack = []
     else_branch_start_depth_stack = []
-    is_if_branch_finish = None
-    is_branch_start = None
     id = 3
     flow_depth = -1
     for line in analysys_result:
+        depth = get_depth(line)
         can_find_process = False
-        if "FUNCTION_DECL: main" in line:
+        if f"FUNCTION_DECL: {func_name}" in line:
             is_detect_func = True
-        if is_detect_func:
+            func_depth = depth
+
+        elif is_detect_func:
+            # 探した関数名から抜ければ終了
+            if depth <= func_depth:
+                break
+
             flow_type = line.split()[0].removesuffix(":")
-            depth = get_depth(line)
+            chart_struct = {}
 
             # forループの終端
             if len(for_loop_start_depth_stack):
                 if depth <= for_loop_start_depth_stack[-1]:
                     for_loop_start_depth_stack.pop()
-                    chart_struct = {}
                     chart_struct["type"] = FlowType.FOR_LOOP_END
                     chart_struct["val"] = "for loop end"
                     can_find_process = True
@@ -96,14 +106,12 @@ def make_chart_structure(analysys_result: List[str], func_name="main"):
             # forループの始端
             if "FOR_STMT" in flow_type:
                 for_loop_start_depth_stack.append(depth)
-                chart_struct = {}
                 chart_struct["type"] = FlowType.FOR_LOOP_START
                 chart_struct["val"] = "for loop start"
                 can_find_process = True
 
             # 関数呼び出し
             if "CALL_EXPR" in flow_type:
-                chart_struct = {}
                 chart_struct["type"] = FlowType.DEFINED_PROCESS
                 chart_struct["val"] = line.split()[1]
                 can_find_process = True
@@ -116,10 +124,10 @@ def make_chart_structure(analysys_result: List[str], func_name="main"):
                     flow_depth += 1
                 else:
                     flow_depth += 2
+                    # TODO: else ifとelse { if {..をうまく設定させる
                     if_branch_start_depth_stack.append(depth)
 
                 if_branch_start_depth_stack.append(depth)
-                chart_struct = {}
                 chart_struct["type"] = FlowType.IF
                 chart_struct["val"] = "xxx = yyy?"
                 can_find_process = True
@@ -130,11 +138,9 @@ def make_chart_structure(analysys_result: List[str], func_name="main"):
                     if depth <= d:
                         flow_depth -= 1
                         if_branch_start_depth_stack.pop()
-                        is_if_branch_finish = True
 
             # ELSE節の最初のプロセス
             if "ELSE_STMT" in flow_type:
-                is_branch_start = True
                 flow_depth += 1
                 else_branch_start_depth_stack.append(depth)
 
@@ -149,9 +155,8 @@ def make_chart_structure(analysys_result: List[str], func_name="main"):
                 can_find_process = False
                 chart_struct["flow_depth"] = flow_depth
                 chart_struct["id"] = id
+                chart_struct["line"] = get_line_no(line)
                 id += 1
-                chart_struct["if_branch_finish"] = True if is_if_branch_finish else False
-                chart_struct["else_start"] = True if is_branch_start else False
                 chart_struct["is_draw_flow"] = False
                 chart_struct_dict_list.append(chart_struct)
 
@@ -326,7 +331,7 @@ def draw_node(flow, x: int, y: int, f: TextIOWrapper):
     if flow["is_draw_flow"] != True:
         render_param = {
             "id": flow["id"],
-            "text": flow["val"] + f": {flow['flow_depth']}",
+            "text": flow["val"],
             "x": x,
             "y": y,
         }

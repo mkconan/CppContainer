@@ -18,18 +18,19 @@ print_node_kind = [
 output_yaml_file = "result_analysis.yaml"
 
 
-def visit_node(file_path: str, node=None, indent=0):
+def visit_node(file_path: str, node: clang.cindex.Cursor = None, indent=0):
     """構文解析木のノードを探索する
 
     Args:
         node (_type_, optional): 構文解析木のノード. Defaults to None.
         indent (int, optional): 深さ. Defaults to 0.
     """
-    print(f"{'  '*indent}{node.kind.name}: {node.spelling} {node.type.spelling}")
-    # if (node.kind.name in print_node_kind) and (str(node.location.file) == file_path):
+    print(f"{'  '*indent}{node.kind.name}: {node.spelling} {node.type.spelling} @{node.location.line}")
+
+    # if (node.kind.name in print_node_kind) and (str(node.location.file) == filspellinge_path):
     if str(node.location.file) == file_path:
         with open(output_yaml_file, mode="a") as f:
-            f.write(f"{INDENT * indent}{node.kind.name}: {node.spelling} {node.type.spelling}\n")
+            f.write(f"{INDENT * indent}{node.kind.name}: {node.spelling} {node.type.spelling} @{node.location.line}\n")
 
     for c in node.get_children():
         visit_node(file_path, c, indent=indent + 1)
