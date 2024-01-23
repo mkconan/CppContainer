@@ -82,7 +82,6 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
     flow_depth = -1
     for line in analysys_result:
         depth = get_depth(line)
-        can_find_process = False
         if f"FUNCTION_DECL: {func_name}" in line:
             is_detect_func = True
             func_depth = depth
@@ -93,28 +92,31 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 break
 
             flow_type = line.split()[0].removesuffix(":")
-            chart_struct = {}
 
             # forループの終端
             if len(for_loop_start_depth_stack):
-                if depth <= for_loop_start_depth_stack[-1]:
-                    for_loop_start_depth_stack.pop()
-                    chart_struct["type"] = FlowType.FOR_LOOP_END
-                    chart_struct["val"] = "for loop end"
-                    can_find_process = True
+                for d in reversed(for_loop_start_depth_stack):
+                    if depth <= d:
+                        for_loop_start_depth_stack.pop()
+                        chart_struct_dict_list.append(
+                            set_chart_struct(FlowType.FOR_LOOP_END, "for loop end", flow_depth, id, line)
+                        )
+                        id += 1
 
             # forループの始端
             if "FOR_STMT" in flow_type:
                 for_loop_start_depth_stack.append(depth)
-                chart_struct["type"] = FlowType.FOR_LOOP_START
-                chart_struct["val"] = "for loop start"
-                can_find_process = True
+                chart_struct_dict_list.append(
+                    set_chart_struct(FlowType.FOR_LOOP_START, "for loop start", flow_depth, id, line)
+                )
+                id += 1
 
             # 関数呼び出し
             if "CALL_EXPR" in flow_type:
-                chart_struct["type"] = FlowType.DEFINED_PROCESS
-                chart_struct["val"] = line.split()[1]
-                can_find_process = True
+                chart_struct_dict_list.append(
+                    set_chart_struct(FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, id, line)
+                )
+                id += 1
 
             # IF分岐の始端
             if "IF_STMT" in flow_type:
@@ -128,9 +130,8 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                     if_branch_start_depth_stack.append(depth)
 
                 if_branch_start_depth_stack.append(depth)
-                chart_struct["type"] = FlowType.IF
-                chart_struct["val"] = "xxx = yyy?"
-                can_find_process = True
+                chart_struct_dict_list.append(set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, id, line))
+                id += 1
 
             # IF分岐の終端
             elif len(if_branch_start_depth_stack):
@@ -151,16 +152,18 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                         flow_depth -= 1
                         else_branch_start_depth_stack.pop()
 
-            if can_find_process:
-                can_find_process = False
-                chart_struct["flow_depth"] = flow_depth
-                chart_struct["id"] = id
-                chart_struct["line"] = get_line_no(line)
-                id += 1
-                chart_struct["is_draw_flow"] = False
-                chart_struct_dict_list.append(chart_struct)
-
     return chart_struct_dict_list
+
+
+def set_chart_struct(type, val: str, flow_depth: int, id: int, line: str):
+    chart_struct = {}
+    chart_struct["type"] = type
+    chart_struct["val"] = val
+    chart_struct["flow_depth"] = flow_depth
+    chart_struct["id"] = id
+    chart_struct["line"] = get_line_no(line)
+    chart_struct["is_draw_flow"] = False
+    return chart_struct
 
 
 def make_if_chart_xml(
