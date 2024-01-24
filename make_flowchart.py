@@ -78,6 +78,7 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
     for_loop_start_depth_stack = []
     if_branch_start_depth_stack = []
     else_branch_start_depth_stack = []
+    depth_stack = []
     id = 3
     flow_depth = -1
     for line in analysys_result:
@@ -93,19 +94,25 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
 
             flow_type = line.split()[0].removesuffix(":")
 
-            # forループの終端
-            if len(for_loop_start_depth_stack):
-                for d in reversed(for_loop_start_depth_stack):
-                    if depth <= d:
-                        for_loop_start_depth_stack.pop()
-                        chart_struct_dict_list.append(
-                            set_chart_struct(FlowType.FOR_LOOP_END, "for loop end", flow_depth, id, line)
-                        )
-                        id += 1
+            # depthスタック確認
+            if len(depth_stack):
+                for d in reversed(depth_stack):
+                    if depth <= d["depth"]:
+                        depth_stack.pop()
+                        if d["name"] == "for_start":
+                            chart_struct_dict_list.append(
+                                set_chart_struct(FlowType.FOR_LOOP_END, "for loop end", flow_depth, id, line)
+                            )
+                            id += 1
+                        elif d["name"] == "if_start" or d["name"] == "else_start":
+                            flow_depth -= 1
+                        else:
+                            KeyError(f"Invalid keys. {d.keys()}")
 
             # forループの始端
             if "FOR_STMT" in flow_type:
-                for_loop_start_depth_stack.append(depth)
+                d = {"name": "for_start", "depth": depth}
+                depth_stack.append(d)
                 chart_struct_dict_list.append(
                     set_chart_struct(FlowType.FOR_LOOP_START, "for loop start", flow_depth, id, line)
                 )
@@ -129,28 +136,17 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                     # TODO: else ifとelse { if {..をうまく設定させる
                     if_branch_start_depth_stack.append(depth)
 
-                if_branch_start_depth_stack.append(depth)
+                d = {"name": "if_start", "depth": depth}
+                depth_stack.append(d)
                 chart_struct_dict_list.append(set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, id, line))
                 id += 1
-
-            # IF分岐の終端
-            elif len(if_branch_start_depth_stack):
-                for d in reversed(if_branch_start_depth_stack):
-                    if depth <= d:
-                        flow_depth -= 1
-                        if_branch_start_depth_stack.pop()
 
             # ELSE節の最初のプロセス
             if "ELSE_STMT" in flow_type:
                 flow_depth += 1
                 else_branch_start_depth_stack.append(depth)
-
-            # ELSE節の終端
-            elif len(else_branch_start_depth_stack):
-                for d in reversed(else_branch_start_depth_stack):
-                    if depth <= d:
-                        flow_depth -= 1
-                        else_branch_start_depth_stack.pop()
+                d = {"name": "else_start", "depth": depth}
+                depth_stack.append(d)
 
     return chart_struct_dict_list
 
