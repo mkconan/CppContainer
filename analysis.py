@@ -67,8 +67,6 @@ def modify_else():
                 # 深さがifより1つ下のifのときelse if判定する
                 if "IF_STMT" in _line and _line_indent_size == if_depth + 1:
                     read_lines[_l] = read_lines[_l].replace("IF_STMT", "ELSE_IF_STMT")
-                    # read_lines[_l] = f"{INDENT*_line_indent_size}ELSE_STMT: \n{read_lines[_l]}"
-                    # read_lines[_l] = f"{INDENT*_line_indent_size}ELSE_IF_STMT: \n"
 
                 if "COMPOUND_STMT" in _line:
                     compound_stmt_cnt += 1
