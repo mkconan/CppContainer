@@ -79,6 +79,7 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
     id = 3
     flow_depth = 0
     if_depth = 0
+    if_root_id_stack = []
     for line in analysys_result:
         depth = get_depth(line)
         if f"FUNCTION_DECL: {func_name}" in line:
@@ -99,17 +100,28 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                         depth_stack.pop()
                         if d["name"] == "for_start":
                             chart_struct_dict_list.append(
-                                set_chart_struct(FlowType.FOR_LOOP_END, "for loop end", flow_depth, if_depth, id, line)
+                                set_chart_struct(
+                                    FlowType.FOR_LOOP_END,
+                                    "for loop end",
+                                    flow_depth,
+                                    if_depth,
+                                    if_root_id_stack,
+                                    id,
+                                    line,
+                                )
                             )
                             id += 1
                         elif d["name"] == "if_start":
                             if_depth -= 1
+                            if_root_id_stack.pop()
                         elif d["name"] == "else_if_start":
                             if_depth -= 2
                             flow_depth -= 1
+                            if_root_id_stack.pop()
                         elif d["name"] == "else_start":
                             if_depth -= 1
                             flow_depth -= 1
+                            if_root_id_stack.pop()
                         else:
                             KeyError(f"Invalid keys. {d.keys()}")
 
@@ -118,14 +130,18 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 d = {"name": "for_start", "depth": depth}
                 depth_stack.append(d)
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.FOR_LOOP_START, "for loop start", flow_depth, if_depth, id, line)
+                    set_chart_struct(
+                        FlowType.FOR_LOOP_START, "for loop start", flow_depth, if_depth, if_root_id_stack, id, line
+                    )
                 )
                 id += 1
 
             # 関数呼び出し
             elif flow_type == "CALL_EXPR":
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, if_depth, id, line)
+                    set_chart_struct(
+                        FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, if_depth, if_root_id_stack, id, line
+                    )
                 )
                 id += 1
 
@@ -133,9 +149,10 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
             elif flow_type == "IF_STMT":
                 depth_dict = {"name": "if_start", "depth": depth}
                 depth_stack.append(depth_dict)
+                if_root_id_stack.append(id)
                 if_depth += 1
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, id, line)
+                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, if_root_id_stack, id, line)
                 )
                 id += 1
 
@@ -143,10 +160,11 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
             elif flow_type == "ELSE_IF_STMT":
                 if_depth += 2
                 flow_depth += 1
+                if_root_id_stack.append(id)
                 depth_dict = {"name": "else_if_start", "depth": depth}
                 depth_stack.append(depth_dict)
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, id, line)
+                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, if_root_id_stack, id, line)
                 )
                 id += 1
 
@@ -154,18 +172,20 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
             elif flow_type == "ELSE_STMT":
                 if_depth += 1
                 flow_depth += 1
+                if_root_id_stack.append(id)
                 d = {"name": "else_start", "depth": depth}
                 depth_stack.append(d)
 
     return chart_struct_dict_list
 
 
-def set_chart_struct(type, val: str, flow_depth: int, if_depth: int, id: int, line: str):
+def set_chart_struct(type, val: str, flow_depth: int, if_depth: int, if_root_id_stack: list, id: int, line: str):
     chart_struct = {}
     chart_struct["type"] = type
     chart_struct["val"] = val
     chart_struct["flow_depth"] = flow_depth
     chart_struct["if_depth"] = if_depth
+    chart_struct["if_root_id_stack"] = if_root_id_stack.copy()
     chart_struct["id"] = id
     chart_struct["line"] = get_line_no(line)
     chart_struct["is_draw_flow"] = False
@@ -206,7 +226,7 @@ def make_if_chart_xml(
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_child_flow["if_depth"] >= if_depth + 1:
+                    if if_flow["id"] in if_child_flow["if_root_id_stack"]:
                         if_child_flows.append(if_child_flow)
                     else:
                         break
@@ -232,7 +252,7 @@ def make_if_chart_xml(
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_child_flow["if_depth"] >= if_depth + 2:
+                    if if_flow["id"] in if_child_flow["if_root_id_stack"]:
                         if_child_flows.append(if_child_flow)
                     else:
                         break
@@ -344,7 +364,7 @@ def draw_node(flow, x: int, y: int, f: TextIOWrapper):
     if flow["is_draw_flow"] != True:
         render_param = {
             "id": flow["id"],
-            "text": f"{flow['val']}  L{flow['line']} FLOW{flow['flow_depth']} IF{flow['if_depth']}",
+            "text": f"{flow['id']} {flow['val']}  L{flow['line']} FLOW{flow['flow_depth']} IF{flow['if_depth']}\n{flow['if_root_id_stack']}",
             "x": x,
             "y": y,
         }
