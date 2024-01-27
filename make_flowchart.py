@@ -75,12 +75,10 @@ def get_line_no(analysis: str):
 def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
     chart_struct_dict_list = []
     is_detect_func = False
-    for_loop_start_depth_stack = []
-    if_branch_start_depth_stack = []
-    else_branch_start_depth_stack = []
     depth_stack = []
     id = 3
-    flow_depth = -1
+    flow_depth = 0
+    if_depth = 0
     for line in analysys_result:
         depth = get_depth(line)
         if f"FUNCTION_DECL: {func_name}" in line:
@@ -101,61 +99,73 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                         depth_stack.pop()
                         if d["name"] == "for_start":
                             chart_struct_dict_list.append(
-                                set_chart_struct(FlowType.FOR_LOOP_END, "for loop end", flow_depth, id, line)
+                                set_chart_struct(FlowType.FOR_LOOP_END, "for loop end", flow_depth, if_depth, id, line)
                             )
                             id += 1
-                        elif d["name"] == "if_start" or d["name"] == "else_start":
+                        elif d["name"] == "if_start":
+                            if_depth -= 1
+                        elif d["name"] == "else_if_start":
+                            if_depth -= 2
+                            flow_depth -= 1
+                        elif d["name"] == "else_start":
+                            if_depth -= 1
                             flow_depth -= 1
                         else:
                             KeyError(f"Invalid keys. {d.keys()}")
 
             # forループの始端
-            if "FOR_STMT" in flow_type:
+            if flow_type == "FOR_STMT":
                 d = {"name": "for_start", "depth": depth}
                 depth_stack.append(d)
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.FOR_LOOP_START, "for loop start", flow_depth, id, line)
+                    set_chart_struct(FlowType.FOR_LOOP_START, "for loop start", flow_depth, if_depth, id, line)
                 )
                 id += 1
 
             # 関数呼び出し
-            if "CALL_EXPR" in flow_type:
+            elif flow_type == "CALL_EXPR":
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, id, line)
+                    set_chart_struct(FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, if_depth, id, line)
                 )
                 id += 1
 
             # IF分岐の始端
-            if "IF_STMT" in flow_type:
-                if len(else_branch_start_depth_stack) > 0 and else_branch_start_depth_stack[-1] == depth - 1:
-                    flow_depth += 1
-                elif len(if_branch_start_depth_stack) == 0:
-                    flow_depth += 1
-                else:
-                    flow_depth += 2
-                    # TODO: else ifとelse { if {..をうまく設定させる
-                    if_branch_start_depth_stack.append(depth)
-
-                d = {"name": "if_start", "depth": depth}
-                depth_stack.append(d)
-                chart_struct_dict_list.append(set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, id, line))
+            elif flow_type == "IF_STMT":
+                depth_dict = {"name": "if_start", "depth": depth}
+                depth_stack.append(depth_dict)
+                if_depth += 1
+                chart_struct_dict_list.append(
+                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, id, line)
+                )
                 id += 1
 
-            # ELSE節の最初のプロセス
-            if "ELSE_STMT" in flow_type:
+            # ELSE IF節の始端
+            elif flow_type == "ELSE_IF_STMT":
+                if_depth += 2
                 flow_depth += 1
-                else_branch_start_depth_stack.append(depth)
+                depth_dict = {"name": "else_if_start", "depth": depth}
+                depth_stack.append(depth_dict)
+                chart_struct_dict_list.append(
+                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, id, line)
+                )
+                id += 1
+
+            # ELSE節の始端
+            elif flow_type == "ELSE_STMT":
+                if_depth += 1
+                flow_depth += 1
                 d = {"name": "else_start", "depth": depth}
                 depth_stack.append(d)
 
     return chart_struct_dict_list
 
 
-def set_chart_struct(type, val: str, flow_depth: int, id: int, line: str):
+def set_chart_struct(type, val: str, flow_depth: int, if_depth: int, id: int, line: str):
     chart_struct = {}
     chart_struct["type"] = type
     chart_struct["val"] = val
     chart_struct["flow_depth"] = flow_depth
+    chart_struct["if_depth"] = if_depth
     chart_struct["id"] = id
     chart_struct["line"] = get_line_no(line)
     chart_struct["is_draw_flow"] = False
@@ -196,8 +206,10 @@ def make_if_chart_xml(
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_child_flow["flow_depth"] >= if_depth + 1:
+                    if if_child_flow["if_depth"] >= if_depth + 1:
                         if_child_flows.append(if_child_flow)
+                    else:
+                        break
 
                 if_y, arrow_id, if_prev_id = make_if_chart_xml(
                     if_child_flows, if_depth + 1, if_x, if_y, arrow_id + 1, f
@@ -297,13 +309,15 @@ def make_chart_xml(analysys_result: List[str]):
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_child_flow["flow_depth"] >= 0:
+                    if if_child_flow["if_depth"] > 0:
                         if_child_flows.append(if_child_flow)
+                    else:
+                        break
 
                 arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
                 y, arrow_id, prev_id = make_if_chart_xml(if_child_flows, 0, x, y, arrow_id, f)
 
-            elif flow["flow_depth"] == -1:
+            elif flow["flow_depth"] == 0:
                 draw_node(flow, x, y, f)
 
                 # 矢印を描画する
@@ -330,7 +344,7 @@ def draw_node(flow, x: int, y: int, f: TextIOWrapper):
     if flow["is_draw_flow"] != True:
         render_param = {
             "id": flow["id"],
-            "text": flow["val"],
+            "text": f"{flow['val']}  L{flow['line']} FLOW{flow['flow_depth']} IF{flow['if_depth']}",
             "x": x,
             "y": y,
         }
