@@ -248,23 +248,6 @@ def make_if_chart_xml(
 
         # elseルートの作成
         elif if_flow["flow_depth"] >= flow_depth + 1:
-            # IFが出てきた場合は再帰的にフロー図を作る
-            if if_flow["type"] == FlowType.IF:
-                # 最初のifフローは入れる
-                if_child_flows = []
-                # if文の中にあるフローのリストを作成する
-                for if_child_flow in flows[f_i:]:
-                    if len(if_child_flow["if_root_id_stack"]) >= len(if_flow["if_root_id_stack"]):
-                        if_child_flows.append(if_child_flow)
-                    else:
-                        break
-                else_y, arrow_id, else_prev_id = make_if_chart_xml(
-                    if_child_flows, if_depth + 2, flow_depth + 1, else_x, else_y, arrow_id, f
-                )
-            else:
-                draw_node(if_flow, else_x, else_y, f)
-                else_y += NORMAL_FLOW_H + ARROW_L
-
             # 矢印を描画する
             # 最初のelse節の場合
             if is_else_process == False:
@@ -281,7 +264,22 @@ def make_if_chart_xml(
             else:
                 arrow_id = draw_arrow(arrow_id, else_prev_id, if_flow["id"], f)
 
-            if if_flow["type"] != FlowType.IF:
+            # IFが出てきた場合は再帰的にフロー図を作る
+            if if_flow["type"] == FlowType.IF:
+                # 最初のifフローは入れる
+                if_child_flows = []
+                # if文の中にあるフローのリストを作成する
+                for if_child_flow in flows[f_i:]:
+                    if len(if_child_flow["if_root_id_stack"]) >= len(if_flow["if_root_id_stack"]):
+                        if_child_flows.append(if_child_flow)
+                    else:
+                        break
+                else_y, arrow_id, else_prev_id = make_if_chart_xml(
+                    if_child_flows, if_depth + 2, flow_depth + 1, else_x, else_y, arrow_id, f
+                )
+            else:
+                draw_node(if_flow, else_x, else_y, f)
+                else_y += NORMAL_FLOW_H + ARROW_L
                 else_prev_id = if_flow["id"]
 
     # ifルートとelseルートでyが長い方を矢印の終端とする
