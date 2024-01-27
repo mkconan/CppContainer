@@ -220,6 +220,9 @@ def make_if_chart_xml(
 
         # ifルートの作成
         if if_flow["flow_depth"] == flow_depth:
+            # 矢印を描画する
+            arrow_id = draw_arrow(arrow_id, if_prev_id, if_flow["id"], f)
+
             # IFが出てきた場合は再帰的にフロー図を作る
             if if_flow["type"] == FlowType.IF:
                 # 最初のifフローは入れる
@@ -237,9 +240,6 @@ def make_if_chart_xml(
 
             else:
                 draw_node(if_flow, if_x, if_y, f)
-
-            # 矢印を描画する
-            arrow_id = draw_arrow(arrow_id, if_prev_id, if_flow["id"], f)
 
             if_prev_id = if_flow["id"]
             if_y += NORMAL_FLOW_H + ARROW_L
@@ -308,6 +308,7 @@ def make_chart_xml(analysys_result: List[str]):
     with open("out/automake.xml", mode="w") as f:
         start_x, start_y = 80, 40
         start_id, end_id = 2, 10000
+        pre_end_id = None
         prev_id = -1
         x = start_x
         y = start_y + NORMAL_FLOW_H + ARROW_L
@@ -331,7 +332,7 @@ def make_chart_xml(analysys_result: List[str]):
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_child_flow["if_depth"] >= 1:
+                    if flow["id"] in if_child_flow["if_root_id_stack"]:
                         if_child_flows.append(if_child_flow)
 
                 arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
@@ -347,7 +348,11 @@ def make_chart_xml(analysys_result: List[str]):
                 y += NORMAL_FLOW_H + ARROW_L
 
         # flow図の最後の部分を描画
-        _ = draw_arrow(arrow_id, flows[-1]["id"], end_id, f)
+        for flow in reversed(flows):
+            if flow["flow_depth"] == 0:
+                pre_end_id = flow["id"]
+                break
+        _ = draw_arrow(arrow_id, pre_end_id, end_id, f)
         render_param = {"id": end_id, "x": x, "y": y}
         f.write(template_dict["flow_end"].render(render_param))
 
