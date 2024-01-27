@@ -24,7 +24,9 @@ class FlowType(Enum):
     ARROW = 5
     ELSE_START_ARROW = 6
     ELSE_END_ARROW = 7
-    DEFINED_PROCESS = 8
+    ELSE_NONE_ARROW = 8
+    DEFINED_PROCESS = 9
+    NORMAL_PROCESS = 10
 
 
 template_dict = {}
@@ -38,8 +40,9 @@ template_flow_list = [
     "arrow",
     "else_start_arrow",
     "else_end_arrow",
-    "process",
+    "else_none_arrow",
     "defined_process",
+    "normal_process",
 ]
 
 
@@ -229,7 +232,7 @@ def make_if_chart_xml(
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_flow["id"] in if_child_flow["if_root_id_stack"]:
+                    if len(if_child_flow["if_root_id_stack"]) >= len(if_flow["if_root_id_stack"]):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
@@ -240,8 +243,7 @@ def make_if_chart_xml(
 
             else:
                 draw_node(if_flow, if_x, if_y, f)
-
-            if_prev_id = if_flow["id"]
+                if_prev_id = if_flow["id"]
             if_y += NORMAL_FLOW_H + ARROW_L
 
         # elseルートの作成
@@ -252,7 +254,7 @@ def make_if_chart_xml(
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if if_flow["id"] in if_child_flow["if_root_id_stack"]:
+                    if len(if_child_flow["if_root_id_stack"]) >= len(if_flow["if_root_id_stack"]):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
@@ -261,6 +263,7 @@ def make_if_chart_xml(
                 )
             else:
                 draw_node(if_flow, else_x, else_y, f)
+                else_y += NORMAL_FLOW_H + ARROW_L
 
             # 矢印を描画する
             # 最初のelse節の場合
@@ -280,13 +283,25 @@ def make_if_chart_xml(
 
             if if_flow["type"] != FlowType.IF:
                 else_prev_id = if_flow["id"]
-            else_y += NORMAL_FLOW_H + ARROW_L
 
     # ifルートとelseルートでyが長い方を矢印の終端とする
     end_y = if_y if if_y > else_y else else_y
 
+    # elseルートが何もなかった場合
+    if is_else_process == False:
+        render_param = {
+            "id": arrow_id,
+            "source_id": flows[0]["id"],
+            "source_y": start_y + IF_FLOW_H // 2,
+            "turn_x": start_x + NORMAL_FLOW_W + MARGIN + NORMAL_FLOW_W // 2,
+            "target_x": start_x + NORMAL_FLOW_W // 2,
+            "target_y": end_y - 20,
+        }
+        f.write(template_dict["else_none_arrow"].render(render_param))
+        arrow_id += 1
+
     # elseルートから戻る矢印を描画する
-    if else_prev_id is not None:
+    else:
         render_param = {
             "id": arrow_id,
             "source_id": else_prev_id,
@@ -332,8 +347,10 @@ def make_chart_xml(analysys_result: List[str]):
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if flow["id"] in if_child_flow["if_root_id_stack"]:
+                    if len(if_child_flow["if_root_id_stack"]) >= len(flow["if_root_id_stack"]):
                         if_child_flows.append(if_child_flow)
+                    else:
+                        break
 
                 arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
                 y, arrow_id, prev_id = make_if_chart_xml(if_child_flows, 1, 0, x, y, arrow_id, f)
