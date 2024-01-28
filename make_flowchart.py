@@ -124,7 +124,6 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                         elif d["name"] == "else_start":
                             if_depth -= 1
                             flow_depth -= 1
-                            if_root_id_stack.pop()
                         else:
                             KeyError(f"Invalid keys. {d.keys()}")
 
@@ -175,7 +174,6 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
             elif flow_type == "ELSE_STMT":
                 if_depth += 1
                 flow_depth += 1
-                if_root_id_stack.append(id)
                 d = {"name": "else_start", "depth": depth}
                 depth_stack.append(d)
 
@@ -197,12 +195,16 @@ def set_chart_struct(type, val: str, flow_depth: int, if_depth: int, if_root_id_
 
 def make_if_chart_xml(
     flows: List[dict], if_depth: int, flow_depth: int, start_x: int, start_y: int, start_arrow_id: int, f: TextIOWrapper
-) -> Tuple[int, int, int]:
+) -> Tuple[int, int, int, int]:
     if_x, if_y = start_x, start_y
     else_x = start_x + IF_FLOW_W + MARGIN
     else_y = start_y + IF_FLOW_H // 2 + ARROW_L
     arrow_id = start_arrow_id
     is_else_process = False
+    # このフロー塊の最大flow深さ
+    max_flow_depth = flow_depth
+    # ifルートの時のflowの深さ elseの開始位置xを決める時に用いる
+    if_route_max_flow_depth = flow_depth
 
     # リストの先頭はIF
     if_start_flow = flows[0]
@@ -232,14 +234,15 @@ def make_if_chart_xml(
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if len(if_child_flow["if_root_id_stack"]) >= len(if_flow["if_root_id_stack"]):
+                    if set(if_child_flow["if_root_id_stack"]) >= set(if_flow["if_root_id_stack"]):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
 
-                if_y, arrow_id, if_prev_id = make_if_chart_xml(
+                if_y, arrow_id, if_prev_id, if_route_max_flow_depth = make_if_chart_xml(
                     if_child_flows, if_depth + 1, flow_depth, if_x, if_y, arrow_id + 1, f
                 )
+                max_flow_depth = max(max_flow_depth, if_route_max_flow_depth)
 
             else:
                 draw_node(if_flow, if_x, if_y, f)
@@ -256,7 +259,11 @@ def make_if_chart_xml(
                     "id": arrow_id,
                     "source_id": if_start_flow["id"],
                     "target_id": if_flow["id"],
-                    "x": start_x + IF_FLOW_W + MARGIN + NORMAL_FLOW_W // 2,
+                    "x": start_x
+                    + IF_FLOW_W
+                    + MARGIN
+                    + NORMAL_FLOW_W // 2
+                    + (if_route_max_flow_depth - flow_depth) * (MARGIN + NORMAL_FLOW_W),
                     "y": start_y + IF_FLOW_H // 2,
                 }
                 f.write(template_dict["else_start_arrow"].render(render_param))
@@ -270,17 +277,29 @@ def make_if_chart_xml(
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if len(if_child_flow["if_root_id_stack"]) >= len(if_flow["if_root_id_stack"]):
+                    if set(if_child_flow["if_root_id_stack"]) >= set(if_flow["if_root_id_stack"]):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
-                else_y, arrow_id, else_prev_id = make_if_chart_xml(
-                    if_child_flows, if_depth + 2, flow_depth + 1, else_x, else_y, arrow_id, f
+                else_y, arrow_id, else_prev_id, _ = make_if_chart_xml(
+                    if_child_flows,
+                    if_depth + 2,
+                    flow_depth + 1,
+                    else_x + (if_route_max_flow_depth - flow_depth) * (MARGIN + NORMAL_FLOW_W),
+                    else_y,
+                    arrow_id,
+                    f,
                 )
             else:
-                draw_node(if_flow, else_x, else_y, f)
+                # 初めてelseが出た場合
+                if else_prev_id is None:
+                    else_y += IF_FLOW_H - NORMAL_FLOW_H
+                draw_node(
+                    if_flow, else_x + (if_route_max_flow_depth - flow_depth) * (MARGIN + NORMAL_FLOW_W), else_y, f
+                )
                 else_y += NORMAL_FLOW_H + ARROW_L
                 else_prev_id = if_flow["id"]
+            max_flow_depth = if_route_max_flow_depth + 1
 
     # ifルートとelseルートでyが長い方を矢印の終端とする
     end_y = if_y if if_y > else_y else else_y
@@ -291,7 +310,10 @@ def make_if_chart_xml(
             "id": arrow_id,
             "source_id": flows[0]["id"],
             "source_y": start_y + IF_FLOW_H // 2,
-            "turn_x": start_x + NORMAL_FLOW_W + MARGIN + NORMAL_FLOW_W // 2,
+            "turn_x": start_x
+            + NORMAL_FLOW_W
+            + MARGIN // 2
+            + (if_route_max_flow_depth - flow_depth) * (MARGIN + NORMAL_FLOW_W),
             "target_x": start_x + NORMAL_FLOW_W // 2,
             "target_y": end_y - 20,
         }
@@ -305,13 +327,14 @@ def make_if_chart_xml(
             "source_id": else_prev_id,
             "target_x": start_x + NORMAL_FLOW_W // 2,
             "target_y": end_y - 20,
+            "arrow_back_width": (if_route_max_flow_depth - flow_depth + 1) * (MARGIN + NORMAL_FLOW_W),
         }
         f.write(template_dict["else_end_arrow"].render(render_param))
         arrow_id += 1
 
     end_arrow_id = arrow_id
 
-    return end_y, end_arrow_id, if_prev_id
+    return end_y, end_arrow_id, if_prev_id, max_flow_depth
 
 
 def make_chart_xml(analysys_result: List[str]):
@@ -351,7 +374,7 @@ def make_chart_xml(analysys_result: List[str]):
                         break
 
                 arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
-                y, arrow_id, prev_id = make_if_chart_xml(if_child_flows, 1, 0, x, y, arrow_id, f)
+                y, arrow_id, prev_id, _ = make_if_chart_xml(if_child_flows, 1, 0, x, y, arrow_id, f)
 
             elif flow["flow_depth"] == 0:
                 draw_node(flow, x, y, f)
