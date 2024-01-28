@@ -31,29 +31,16 @@ class FlowType(Enum):
 
 template_dict = {}
 
-template_flow_list = [
-    "flow_start",
-    "flow_end",
-    "for_loop_start",
-    "for_loop_end",
-    "if",
-    "arrow",
-    "else_start_arrow",
-    "else_end_arrow",
-    "else_none_arrow",
-    "defined_process",
-    "normal_process",
-]
-
 
 def load_templates():
     """フローのテンプレートの読み込み"""
     global template_dict
     env = Environment(loader=FileSystemLoader("templates"))
 
-    for flow in template_flow_list:
-        template = env.get_template(f"{flow}.j2")
-        template_dict[flow] = template
+    for flow_type in FlowType:
+        flow_type = flow_type.name.lower()
+        template = env.get_template(f"{flow_type}.j2")
+        template_dict[flow_type] = template
 
     return
 
