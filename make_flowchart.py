@@ -5,6 +5,8 @@ from enum import Enum
 from pprint import pprint
 from io import TextIOWrapper
 from typing import Tuple, List
+import sys
+import html
 
 DEFAULT_DEPTH = 3
 IF_FLOW_W = 240
@@ -13,6 +15,8 @@ NORMAL_FLOW_H = 40
 NORMAL_FLOW_W = 240
 ARROW_L = 40
 MARGIN = 40
+
+source_code = []
 
 
 class FlowType(Enum):
@@ -45,6 +49,12 @@ def load_templates():
     return
 
 
+def laod_source_code(c_file_path: str):
+    global source_code
+    with open(c_file_path, mode="r") as f:
+        source_code = f.readlines()
+
+
 def read_analysys_file(file_path: str):
     with open(file_path, mode="r") as f:
         return f.readlines()
@@ -60,6 +70,30 @@ def get_line_no(analysis: str):
     line = re.search(r"@[0-9]*", analysis).group()
     line = int(line[1:])
     return line
+
+
+def get_if_text(line_no: int):
+    # ifの中身が複数行の場合があるため
+    if_lines = "".join(source_code[line_no - 1 : line_no + 2])
+    match = re.match(r"\s*if \((.*)\)", if_lines)
+    if match:
+        # 不等号記号をHTML形式に合うように変換
+        if_text = html.escape(match.group(1))
+        return if_text
+    else:
+        return None
+
+
+def get_for_text(line_no: int):
+    # forの中身が複数行の場合があるため
+    for_lines = "".join(source_code[line_no - 1 : line_no + 2])
+    match = re.match(r"\s*for \((.*)\)", for_lines)
+    if match:
+        # 不等号記号をHTML形式に合うように変換
+        for_2nd_text = html.escape(match.group(1).split(";")[1][1:])
+        return for_2nd_text
+    else:
+        return None
 
 
 def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
@@ -120,7 +154,13 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 depth_stack.append(d)
                 chart_struct_dict_list.append(
                     set_chart_struct(
-                        FlowType.FOR_LOOP_START, "for loop start", flow_depth, if_depth, if_root_id_stack, id, line
+                        FlowType.FOR_LOOP_START,
+                        get_for_text(get_line_no(line)),
+                        flow_depth,
+                        if_depth,
+                        if_root_id_stack,
+                        id,
+                        line,
                     )
                 )
                 id += 1
@@ -141,7 +181,9 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 if_root_id_stack.append(id)
                 if_depth += 1
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, if_root_id_stack, id, line)
+                    set_chart_struct(
+                        FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, id, line
+                    )
                 )
                 id += 1
 
@@ -153,7 +195,9 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 depth_dict = {"name": "else_if_start", "depth": depth}
                 depth_stack.append(depth_dict)
                 chart_struct_dict_list.append(
-                    set_chart_struct(FlowType.IF, "xxx = yyy?", flow_depth, if_depth, if_root_id_stack, id, line)
+                    set_chart_struct(
+                        FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, id, line
+                    )
                 )
                 id += 1
 
@@ -355,7 +399,7 @@ def make_chart_xml(analysys_result: List[str]):
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if len(if_child_flow["if_root_id_stack"]) >= len(flow["if_root_id_stack"]):
+                    if set(if_child_flow["if_root_id_stack"]) >= set(flow["if_root_id_stack"]):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
@@ -394,7 +438,8 @@ def draw_node(flow, x: int, y: int, f: TextIOWrapper):
     if flow["is_draw_flow"] != True:
         render_param = {
             "id": flow["id"],
-            "text": f"{flow['id']} {flow['val']}  L{flow['line']} FLOW{flow['flow_depth']} IF{flow['if_depth']}\n{flow['if_root_id_stack']}",
+            # "text": f"{flow['id']} {flow['val']}  L{flow['line']} FLOW{flow['flow_depth']} IF{flow['if_depth']}\n{flow['if_root_id_stack']}",
+            "text": f"{flow['val']} L{flow['line']}",
             "x": x,
             "y": y,
         }
@@ -421,7 +466,9 @@ def draw_arrow(arrow_id: int, source_id: int, target_id: int, f: TextIOWrapper) 
 
 
 def main():
+    argv = sys.argv
     load_templates()
+    laod_source_code(argv[1])
     analysys_result = read_analysys_file("./result_analysis.yaml")
     make_chart_xml(analysys_result)
 
