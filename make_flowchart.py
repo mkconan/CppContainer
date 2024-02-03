@@ -16,6 +16,7 @@ NORMAL_FLOW_W = 240
 ARROW_L = 40
 MARGIN = 40
 
+template_dict = {}
 source_code = []
 
 
@@ -33,7 +34,80 @@ class FlowType(Enum):
     NORMAL_PROCESS = 10
 
 
-template_dict = {}
+class FlowNode:
+    def __init__(self, id, flow_type, text, flow_depth, if_depth, if_root_id_stack, line) -> None:
+        self._id: int = id
+        self._flow_type: FlowType = flow_type
+        self._next_id: int = self.get_next_id()
+        self.text: str = text
+        self._flow_depth: int = flow_depth
+        self._if_depth: int = if_depth
+        self._if_root_id_stack: List[int] = if_root_id_stack.copy()
+        self._line_no: int = get_line_no(line)
+        self._is_draw_flow: bool = False
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def next_id(self):
+        return self._next_id
+
+    @property
+    def flow_type(self):
+        return self._flow_type
+
+    @property
+    def flow_depth(self):
+        return self._flow_depth
+
+    @property
+    def if_depth(self):
+        return self._if_depth
+
+    @property
+    def if_root_id_stack(self):
+        return self._if_root_id_stack
+
+    @property
+    def is_draw_flow(self):
+        return self._is_draw_flow
+
+    def set_position(self, x: int, y: int):
+        self.x = x
+        self.y = y
+
+    def draw_node(self, f: TextIOWrapper):
+        if self._is_draw_flow == False:
+            render_param = {
+                "id": self._id,
+                # "text": f"{self._id} {self.text}  L{self._line_no} FLOW{self.flow_depth} IF{self.if_depth}\n{self._if_root_id_stack}",
+                "text": f"{self.text} L{self._line_no}",
+                "x": self.x,
+                "y": self.y,
+            }
+            f.write(template_dict[f"{self._flow_type.name.lower()}"].render(render_param))
+            # 描画済であることを記録する
+            self._is_draw_flow = True
+
+    def get_next_id(self):
+        if self._flow_type == FlowType.IF:
+            return self._id + 3
+        else:
+            return self._id + 1
+
+
+class Arrow:
+    def __init__(self, id, source_id, target_id) -> None:
+        self._id = id
+        self._source_id = source_id
+        self._target_id = target_id
+
+    def draw_arrow(self, f: TextIOWrapper):
+        render_param = {"id": self._id, "source_id": self._source_id, "target_id": self._target_id}
+        f.write(template_dict["arrow"].render(render_param))
+        return self._id + 1
 
 
 def load_templates():
@@ -96,8 +170,8 @@ def get_for_text(line_no: int):
         return None
 
 
-def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
-    chart_struct_dict_list = []
+def make_chart_structure(analysys_result: List[str], func_name: str = "main") -> List[FlowNode]:
+    flow_list: List[FlowNode] = []
     is_detect_func = False
     depth_stack = []
     id = 3
@@ -123,18 +197,11 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                     if depth <= d["depth"]:
                         depth_stack.pop()
                         if d["name"] == "for_start":
-                            chart_struct_dict_list.append(
-                                set_chart_struct(
-                                    FlowType.FOR_LOOP_END,
-                                    "for loop end",
-                                    flow_depth,
-                                    if_depth,
-                                    if_root_id_stack,
-                                    id,
-                                    line,
-                                )
+                            flow = FlowNode(
+                                id, FlowType.FOR_LOOP_END, "for loop end", flow_depth, if_depth, if_root_id_stack, line
                             )
-                            id += 1
+                            flow_list.append(flow)
+                            id = flow.next_id
                         elif d["name"] == "if_start":
                             if_depth -= 1
                             if_root_id_stack.pop()
@@ -152,27 +219,25 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
             if flow_type == "FOR_STMT":
                 d = {"name": "for_start", "depth": depth}
                 depth_stack.append(d)
-                chart_struct_dict_list.append(
-                    set_chart_struct(
-                        FlowType.FOR_LOOP_START,
-                        get_for_text(get_line_no(line)),
-                        flow_depth,
-                        if_depth,
-                        if_root_id_stack,
-                        id,
-                        line,
-                    )
+                flow = FlowNode(
+                    id,
+                    FlowType.FOR_LOOP_START,
+                    get_for_text(get_line_no(line)),
+                    flow_depth,
+                    if_depth,
+                    if_root_id_stack,
+                    line,
                 )
-                id += 1
+                flow_list.append(flow)
+                id = flow.next_id
 
             # 関数呼び出し
             elif flow_type == "CALL_EXPR":
-                chart_struct_dict_list.append(
-                    set_chart_struct(
-                        FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, if_depth, if_root_id_stack, id, line
-                    )
+                flow = FlowNode(
+                    id, FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, if_depth, if_root_id_stack, line
                 )
-                id += 1
+                flow_list.append(flow)
+                id = flow.next_id
 
             # IF分岐の始端
             elif flow_type == "IF_STMT":
@@ -180,12 +245,11 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 depth_stack.append(depth_dict)
                 if_root_id_stack.append(id)
                 if_depth += 1
-                chart_struct_dict_list.append(
-                    set_chart_struct(
-                        FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, id, line
-                    )
+                flow = FlowNode(
+                    id, FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, line
                 )
-                id += 3
+                flow_list.append(flow)
+                id = flow.next_id
 
             # ELSE IF節の始端
             elif flow_type == "ELSE_IF_STMT":
@@ -194,12 +258,11 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 if_root_id_stack.append(id)
                 depth_dict = {"name": "else_if_start", "depth": depth}
                 depth_stack.append(depth_dict)
-                chart_struct_dict_list.append(
-                    set_chart_struct(
-                        FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, id, line
-                    )
+                flow = FlowNode(
+                    id, FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, line
                 )
-                id += 3
+                flow_list.append(flow)
+                id = flow.next_id
 
             # ELSE節の始端
             elif flow_type == "ELSE_STMT":
@@ -208,24 +271,17 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                 d = {"name": "else_start", "depth": depth}
                 depth_stack.append(d)
 
-    return chart_struct_dict_list
-
-
-def set_chart_struct(type, val: str, flow_depth: int, if_depth: int, if_root_id_stack: list, id: int, line: str):
-    chart_struct = {}
-    chart_struct["type"] = type
-    chart_struct["val"] = val
-    chart_struct["flow_depth"] = flow_depth
-    chart_struct["if_depth"] = if_depth
-    chart_struct["if_root_id_stack"] = if_root_id_stack.copy()
-    chart_struct["id"] = id
-    chart_struct["line"] = get_line_no(line)
-    chart_struct["is_draw_flow"] = False
-    return chart_struct
+    return flow_list
 
 
 def make_if_chart_xml(
-    flows: List[dict], if_depth: int, flow_depth: int, start_x: int, start_y: int, start_arrow_id: int, f: TextIOWrapper
+    flows: List[FlowNode],
+    if_depth: int,
+    flow_depth: int,
+    start_x: int,
+    start_y: int,
+    start_arrow_id: int,
+    f: TextIOWrapper,
 ) -> Tuple[int, int, int, int]:
     if_x, if_y = start_x, start_y
     else_x = start_x + IF_FLOW_W + MARGIN
@@ -239,9 +295,10 @@ def make_if_chart_xml(
 
     # リストの先頭はIF
     if_start_flow = flows[0]
-    draw_node(if_start_flow, if_x, if_y, f)
+    if_start_flow.set_position(if_x, if_y)
+    if_start_flow.draw_node(f)
 
-    if_prev_id: int = if_start_flow["id"]
+    if_prev_id: int = if_start_flow.id
     else_prev_id = None
     if_y += IF_FLOW_H + ARROW_L
     arrow_id += 1
@@ -251,21 +308,22 @@ def make_if_chart_xml(
         if f_i == 0:
             continue
 
-        if if_flow["is_draw_flow"] == True:
+        if if_flow.is_draw_flow == True:
             continue
 
         # ifルートの作成
-        if if_flow["flow_depth"] == flow_depth:
+        if if_flow.flow_depth == flow_depth:
             # 矢印を描画する
-            arrow_id = draw_arrow(arrow_id, if_prev_id, if_flow["id"], f)
+            arrow = Arrow(arrow_id, if_prev_id, if_flow.id)
+            arrow_id = arrow.draw_arrow(f)
 
             # IFが出てきた場合は再帰的にフロー図を作る
-            if if_flow["type"] == FlowType.IF:
+            if if_flow.flow_type == FlowType.IF:
                 # 最初のifフローは入れる
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if set(if_child_flow["if_root_id_stack"]) >= set(if_flow["if_root_id_stack"]):
+                    if set(if_child_flow.if_root_id_stack) >= set(if_flow.if_root_id_stack):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
@@ -276,20 +334,21 @@ def make_if_chart_xml(
                 max_flow_depth = max(max_flow_depth, if_route_max_flow_depth)
 
             else:
-                draw_node(if_flow, if_x, if_y, f)
-                if_prev_id = if_flow["id"]
+                if_flow.set_position(if_x, if_y)
+                if_flow.draw_node(f)
+                if_prev_id = if_flow.id
             if_y += NORMAL_FLOW_H + ARROW_L
 
         # elseルートの作成
-        elif if_flow["flow_depth"] >= flow_depth + 1:
+        elif if_flow.flow_depth >= flow_depth + 1:
             # 矢印を描画する
             # 最初のelse節の場合
             if is_else_process == False:
                 is_else_process = True
                 render_param = {
                     "id": arrow_id,
-                    "source_id": if_start_flow["id"],
-                    "target_id": if_flow["id"],
+                    "source_id": if_start_flow.id,
+                    "target_id": if_flow.id,
                     "x": start_x
                     + IF_FLOW_W
                     + MARGIN
@@ -300,15 +359,16 @@ def make_if_chart_xml(
                 f.write(template_dict["else_start_arrow"].render(render_param))
                 arrow_id += 1
             else:
-                arrow_id = draw_arrow(arrow_id, else_prev_id, if_flow["id"], f)
+                arrow = Arrow(arrow_id, else_prev_id, if_flow.id)
+                arrow_id = arrow.draw_arrow(f)
 
             # IFが出てきた場合は再帰的にフロー図を作る
-            if if_flow["type"] == FlowType.IF:
+            if if_flow.flow_type == FlowType.IF:
                 # 最初のifフローは入れる
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if set(if_child_flow["if_root_id_stack"]) >= set(if_flow["if_root_id_stack"]):
+                    if set(if_child_flow.if_root_id_stack) >= set(if_flow.if_root_id_stack):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
@@ -325,11 +385,10 @@ def make_if_chart_xml(
                 # 初めてelseが出た場合
                 if else_prev_id is None:
                     else_y += IF_FLOW_H - NORMAL_FLOW_H
-                draw_node(
-                    if_flow, else_x + (if_route_max_flow_depth - flow_depth) * (MARGIN + NORMAL_FLOW_W), else_y, f
-                )
+                if_flow.set_position(else_x + (if_route_max_flow_depth - flow_depth) * (MARGIN + NORMAL_FLOW_W), else_y)
+                if_flow.draw_node(f)
                 else_y += NORMAL_FLOW_H + ARROW_L
-                else_prev_id = if_flow["id"]
+                else_prev_id = if_flow.id
             max_flow_depth = if_route_max_flow_depth + 1
 
     # ifルートとelseルートでyが長い方を矢印の終端とする
@@ -339,7 +398,7 @@ def make_if_chart_xml(
     if is_else_process == False:
         render_param = {
             "id": arrow_id,
-            "source_id": flows[0]["id"],
+            "source_id": flows[0].id,
             "source_y": start_y + IF_FLOW_H // 2,
             "turn_x": start_x
             + NORMAL_FLOW_W
@@ -369,7 +428,7 @@ def make_if_chart_xml(
 
 
 def make_chart_xml(analysys_result: List[str]):
-    flows = make_chart_structure(analysys_result)
+    flows: List[FlowNode] = make_chart_structure(analysys_result)
     # pprint(flows)
 
     with open("out/automake.xml", mode="w") as f:
@@ -385,84 +444,50 @@ def make_chart_xml(analysys_result: List[str]):
         # flow図の最初の部分を描画
         render_param = {"x": start_x, "y": start_y}
         f.write(template_dict["flow_start"].render(render_param))
-        arrow_id = draw_arrow(arrow_id, start_id, flows[0]["id"], f)
+        arrow = Arrow(arrow_id, start_id, flows[0].id)
+        arrow_id = arrow.draw_arrow(f)
 
         for f_i, flow in enumerate(flows):
             # プロセスを描画する
 
             # 描画済みのものはskipする
-            if flow["is_draw_flow"] == True:
+            if flow.is_draw_flow == True:
                 continue
 
             # IFが出てきた場合は再帰的にフロー図を作る
-            if flow["type"] == FlowType.IF and flow["flow_depth"] == 0:
+            if flow.flow_type == FlowType.IF and flow.flow_depth == 0:
                 if_child_flows = []
                 # if文の中にあるフローのリストを作成する
                 for if_child_flow in flows[f_i:]:
-                    if set(if_child_flow["if_root_id_stack"]) >= set(flow["if_root_id_stack"]):
+                    if set(if_child_flow.if_root_id_stack) >= set(flow.if_root_id_stack):
                         if_child_flows.append(if_child_flow)
                     else:
                         break
 
-                arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
+                arrow = Arrow(arrow_id, prev_id, flow.id)
+                arrow_id = arrow.draw_arrow(f)
                 y, arrow_id, prev_id, _ = make_if_chart_xml(if_child_flows, 1, 0, x, y, arrow_id, f)
 
-            elif flow["flow_depth"] == 0:
-                draw_node(flow, x, y, f)
+            elif flow.flow_depth == 0:
+                flow.set_position(x, y)
+                flow.draw_node(f)
 
                 # 矢印を描画する
-                arrow_id = draw_arrow(arrow_id, prev_id, flow["id"], f)
+                arrow = Arrow(arrow_id, prev_id, flow.id)
+                arrow_id = arrow.draw_arrow(f)
 
-                prev_id = flow["id"]
+                prev_id = flow.id
                 y += NORMAL_FLOW_H + ARROW_L
 
         # flow図の最後の部分を描画
         for flow in reversed(flows):
-            if flow["flow_depth"] == 0:
-                pre_end_id = flow["id"]
+            if flow.flow_depth == 0:
+                pre_end_id = flow.id
                 break
-        _ = draw_arrow(arrow_id, pre_end_id, end_id, f)
+        arrow = Arrow(arrow_id, pre_end_id, end_id)
+        _ = arrow.draw_arrow(f)
         render_param = {"id": end_id, "x": x, "y": y}
         f.write(template_dict["flow_end"].render(render_param))
-
-
-def draw_node(flow, x: int, y: int, f: TextIOWrapper):
-    """Node（フローの要素）を描画する
-
-    Args:
-        flow (_type_): フローの辞書
-        x (int): 描画位置の左上x座標
-        y (int): 描画位置の左上y座標
-        f (TextIOWrapper): ファイルストリーム
-    """
-    if flow["is_draw_flow"] != True:
-        render_param = {
-            "id": flow["id"],
-            # "text": f"{flow['id']} {flow['val']}  L{flow['line']} FLOW{flow['flow_depth']} IF{flow['if_depth']}\n{flow['if_root_id_stack']}",
-            "text": f"{flow['val']} L{flow['line']}",
-            "x": x,
-            "y": y,
-        }
-        f.write(template_dict[f"{flow['type'].name.lower()}"].render(render_param))
-        # 描画済であることを記録する
-        flow["is_draw_flow"] = True
-
-
-def draw_arrow(arrow_id: int, source_id: int, target_id: int, f: TextIOWrapper) -> int:
-    """矢印を描画する
-
-    Args:
-        arrow_id (int): 矢印のID
-        source_id (int): 矢元のノードID
-        target_id (int): 矢先のノードID
-        f (TextIOWrapper): ファイルストリーム
-
-    Returns:
-        int: インクリメントした矢印ID
-    """
-    render_param = {"id": arrow_id, "source_id": source_id, "target_id": target_id}
-    f.write(template_dict["arrow"].render(render_param))
-    return arrow_id + 1
 
 
 def main():
