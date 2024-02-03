@@ -185,7 +185,7 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                         FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, id, line
                     )
                 )
-                id += 1
+                id += 3
 
             # ELSE IF節の始端
             elif flow_type == "ELSE_IF_STMT":
@@ -199,7 +199,7 @@ def make_chart_structure(analysys_result: List[str], func_name: str = "main"):
                         FlowType.IF, get_if_text(get_line_no(line)), flow_depth, if_depth, if_root_id_stack, id, line
                     )
                 )
-                id += 1
+                id += 3
 
             # ELSE節の始端
             elif flow_type == "ELSE_STMT":
