@@ -1,6 +1,7 @@
 from enum import Enum
 from io import TextIOWrapper
 from typing import List
+import uuid
 
 
 class FlowType(Enum):
@@ -18,16 +19,46 @@ class FlowType(Enum):
 
 
 class FlowNode:
-    def __init__(self, id, flow_type, text, flow_depth, if_depth, if_root_id_stack, line_no) -> None:
-        self._id: int = id
+    cur_if_root_id_stack: List[int] = []
+    cur_depth_stack: List[dict] = []
+    cur_flow_depth: int = 0
+    cur_if_depth: int = 0
+
+    def __init__(self, flow_type, text, line_no) -> None:
+        self._id: int = uuid.uuid4().int
         self._flow_type: FlowType = flow_type
-        self._next_id: int = self.get_next_id()
         self.text: str = text
-        self._flow_depth: int = flow_depth
-        self._if_depth: int = if_depth
-        self._if_root_id_stack: List[int] = if_root_id_stack.copy()
+        self._flow_depth: int = FlowNode.cur_flow_depth
+        self._if_depth: int = FlowNode.cur_if_depth
+        if self._flow_type == FlowType.IF:
+            FlowNode.push_if_root_id_stack(self._id)
+        self._if_root_id_stack: List[int] = FlowNode.cur_if_root_id_stack.copy()
         self._line_no: int = line_no
         self._is_draw_flow: bool = False
+
+    @classmethod
+    def push_if_root_id_stack(cls, id: int):
+        cls.cur_if_root_id_stack.append(id)
+
+    @classmethod
+    def pop_if_root_id_stack(cls):
+        cls.cur_if_root_id_stack.pop()
+
+    @classmethod
+    def push_depth_stack(cls, d: dict):
+        cls.cur_depth_stack.append(d)
+
+    @classmethod
+    def pop_depth_stack(cls):
+        cls.cur_depth_stack.pop()
+
+    @classmethod
+    def add_if_depth(cls, depth: int):
+        cls.cur_if_depth += depth
+
+    @classmethod
+    def add_flow_depth(cls, depth: int):
+        cls.cur_flow_depth += depth
 
     @property
     def id(self):
@@ -50,10 +81,6 @@ class FlowNode:
         return self._if_depth
 
     @property
-    def if_root_id_stack(self):
-        return self._if_root_id_stack
-
-    @property
     def is_draw_flow(self):
         return self._is_draw_flow
 
@@ -74,15 +101,9 @@ class FlowNode:
             # 描画済であることを記録する
             self._is_draw_flow = True
 
-    def get_next_id(self):
-        if self._flow_type == FlowType.IF:
-            return self._id + 3
-        else:
-            return self._id + 1
-
 
 def contains_if_root(target_flow: FlowNode, ref_flow: FlowNode) -> bool:
-    return set(target_flow.if_root_id_stack) >= set(ref_flow.if_root_id_stack)
+    return set(target_flow._if_root_id_stack) >= set(ref_flow._if_root_id_stack)
 
 
 class Arrow:

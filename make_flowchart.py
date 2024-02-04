@@ -40,11 +40,6 @@ def laod_source_code(c_file_path: str):
 def make_flow_list(analysys_result: List[str], func_name: str = "main") -> List[FlowNode]:
     flow_list: List[FlowNode] = []
     is_detect_func = False
-    depth_stack = []
-    id = 3
-    flow_depth = 0
-    if_depth = 0
-    if_root_id_stack = []
     for line in analysys_result:
         depth = util.get_depth(line)
         line_no = util.get_line_no(line)
@@ -60,102 +55,77 @@ def make_flow_list(analysys_result: List[str], func_name: str = "main") -> List[
             flow_type = line.split()[0].removesuffix(":")
 
             # depthスタック確認
-            if len(depth_stack):
-                for d in reversed(depth_stack):
+            if len(FlowNode.cur_depth_stack):
+                for d in reversed(FlowNode.cur_depth_stack):
                     if depth <= d["depth"]:
-                        depth_stack.pop()
+                        FlowNode.pop_depth_stack()
                         if d["name"] == "for_start":
                             flow = FlowNode(
-                                id,
                                 FlowType.FOR_LOOP_END,
                                 "for loop end",
-                                flow_depth,
-                                if_depth,
-                                if_root_id_stack,
                                 line_no,
                             )
                             flow_list.append(flow)
-                            id = flow.next_id
                         elif d["name"] == "if_start":
-                            if_depth -= 1
-                            if_root_id_stack.pop()
+                            FlowNode.add_if_depth(-1)
+                            FlowNode.pop_if_root_id_stack()
                         elif d["name"] == "else_if_start":
-                            if_depth -= 2
-                            flow_depth -= 1
-                            if_root_id_stack.pop()
+                            FlowNode.add_if_depth(-1)
+                            FlowNode.add_flow_depth(-1)
+                            FlowNode.pop_if_root_id_stack()
                         elif d["name"] == "else_start":
-                            if_depth -= 1
-                            flow_depth -= 1
+                            FlowNode.add_if_depth(-1)
+                            FlowNode.add_flow_depth(-1)
                         else:
                             KeyError(f"Invalid keys. {d.keys()}")
 
             # forループの始端
             if flow_type == "FOR_STMT":
                 d = {"name": "for_start", "depth": depth}
-                depth_stack.append(d)
+                FlowNode.push_depth_stack(d)
                 flow = FlowNode(
-                    id,
                     FlowType.FOR_LOOP_START,
                     util.get_for_text(line_no, source_code),
-                    flow_depth,
-                    if_depth,
-                    if_root_id_stack,
                     line_no,
                 )
                 flow_list.append(flow)
-                id = flow.next_id
 
             # 関数呼び出し
             elif flow_type == "CALL_EXPR":
-                flow = FlowNode(
-                    id, FlowType.DEFINED_PROCESS, line.split()[1], flow_depth, if_depth, if_root_id_stack, line_no
-                )
+                flow = FlowNode(FlowType.DEFINED_PROCESS, line.split()[1], line_no)
                 flow_list.append(flow)
-                id = flow.next_id
 
             # IF分岐の始端
             elif flow_type == "IF_STMT":
                 depth_dict = {"name": "if_start", "depth": depth}
-                depth_stack.append(depth_dict)
-                if_root_id_stack.append(id)
-                if_depth += 1
+                FlowNode.push_depth_stack(depth_dict)
+                FlowNode.add_if_depth(1)
                 flow = FlowNode(
-                    id,
                     FlowType.IF,
                     util.get_if_text(line_no, source_code),
-                    flow_depth,
-                    if_depth,
-                    if_root_id_stack,
                     line_no,
                 )
                 flow_list.append(flow)
-                id = flow.next_id
 
             # ELSE IF節の始端
             elif flow_type == "ELSE_IF_STMT":
-                if_depth += 2
-                flow_depth += 1
-                if_root_id_stack.append(id)
+                FlowNode.add_if_depth(2)
+                FlowNode.add_flow_depth(1)
                 depth_dict = {"name": "else_if_start", "depth": depth}
-                depth_stack.append(depth_dict)
+                FlowNode.push_depth_stack(depth_dict)
                 flow = FlowNode(
-                    id,
                     FlowType.IF,
                     util.get_if_text(line_no, source_code),
-                    flow_depth,
-                    if_depth,
-                    if_root_id_stack,
                     line_no,
                 )
                 flow_list.append(flow)
-                id = flow.next_id
 
             # ELSE節の始端
             elif flow_type == "ELSE_STMT":
-                if_depth += 1
-                flow_depth += 1
+                FlowNode.add_if_depth(1)
+                FlowNode.add_flow_depth(1)
                 d = {"name": "else_start", "depth": depth}
-                depth_stack.append(d)
+                FlowNode.push_depth_stack(d)
 
     return flow_list
 
@@ -173,7 +143,7 @@ def make_if_flow_list(
     else_x = start_x + IF_FLOW_W + MARGIN
     else_y = start_y + IF_FLOW_H // 2 + ARROW_L
     arrow_id = start_arrow_id
-    is_else_process = False
+    exists_else_process = False
     # このフロー塊の最大flow深さ
     max_flow_depth = flow_depth
     # ifルートの時のflowの深さ elseの開始位置xを決める時に用いる
@@ -229,8 +199,8 @@ def make_if_flow_list(
         elif if_flow.flow_depth >= flow_depth + 1:
             # 矢印を描画する
             # 最初のelse節の場合
-            if is_else_process == False:
-                is_else_process = True
+            if exists_else_process == False:
+                exists_else_process = True
                 render_param = {
                     "id": arrow_id,
                     "source_id": if_start_flow.id,
@@ -281,7 +251,7 @@ def make_if_flow_list(
     end_y = if_y if if_y > else_y else else_y
 
     # elseルートが何もなかった場合
-    if is_else_process == False:
+    if exists_else_process == False:
         render_param = {
             "id": arrow_id,
             "source_id": flows[0].id,
