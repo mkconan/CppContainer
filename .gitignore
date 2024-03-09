@@ -3,6 +3,9 @@
 sample
 Dockerfile
 out
+__pycache__
+.vscode
 
 # File
 result_analysis.yaml
+.DS_Store

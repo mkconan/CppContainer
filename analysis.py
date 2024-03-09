@@ -43,6 +43,7 @@ def modify_else():
     with open(output_yaml_file, mode="r") as f:
         read_lines = f.readlines()
 
+    write_lines = read_lines.copy()
     for l, line in enumerate(read_lines):
         line_indent_size = calc_indent_depth(line)
 
@@ -58,7 +59,7 @@ def modify_else():
                 _line = read_lines[_l]
                 _line_indent_size = calc_indent_depth(_line)
 
-                if _line_indent_size == if_depth:
+                if _line_indent_size <= if_depth:
                     break
 
                 if _line_indent_size != if_depth + 1:
@@ -66,18 +67,21 @@ def modify_else():
 
                 # 深さがifより1つ下のifのときelse if判定する
                 if "IF_STMT" in _line and _line_indent_size == if_depth + 1:
-                    read_lines[_l] = read_lines[_l].replace("IF_STMT", "ELSE_IF_STMT")
+                    write_lines[_l] = read_lines[_l].replace("IF_STMT", "ELSE_IF_STMT")
 
                 if "COMPOUND_STMT" in _line:
                     compound_stmt_cnt += 1
+                    # { } の中に処理がなかったらNO PROCESSと表示
+                    if calc_indent_depth(read_lines[_l + 1]) <= _line_indent_size:
+                        write_lines[_l] += f"{INDENT*(_line_indent_size+1)}NO_PROCESS: \n"
 
                 if compound_stmt_cnt == 2:
-                    read_lines[_l] = f"{INDENT*_line_indent_size}ELSE_STMT: \n"
+                    write_lines[_l] = write_lines[_l].replace("COMPOUND_STMT", "ELSE_STMT")
                     break
 
     # Modify
     with open(output_yaml_file, mode="w") as f:
-        f.writelines(read_lines)
+        f.writelines(write_lines)
 
 
 def remove_included_func():
