@@ -2,6 +2,7 @@ from enum import Enum
 from io import TextIOWrapper
 from typing import List
 import uuid
+from abc import ABC, abstractmethod
 
 
 class FlowType(Enum):
@@ -18,16 +19,30 @@ class FlowType(Enum):
     NORMAL_PROCESS = 10
 
 
-class FlowNode:
+class FlowShape(ABC):
+    def __init__(self) -> None:
+        super().__init__()
+        self._id: int = uuid.uuid4().int
+
+    @abstractmethod
+    def draw(self, template_dict: dict, f: TextIOWrapper):
+        raise NotImplementedError
+
+    @property
+    def id(self):
+        return self._id
+
+
+class FlowNode(FlowShape):
     cur_if_root_id_stack: List[int] = []
     cur_depth_stack: List[dict] = []
     cur_flow_depth: int = 0
     cur_if_depth: int = 0
 
     def __init__(self, flow_type, text, line_no) -> None:
-        self._id: int = uuid.uuid4().int
+        super().__init__()
         self._flow_type: FlowType = flow_type
-        self.text: str = text
+        self._text: str = text
         self._flow_depth: int = FlowNode.cur_flow_depth
         self._if_depth: int = FlowNode.cur_if_depth
         if self._flow_type == FlowType.IF:
@@ -61,14 +76,6 @@ class FlowNode:
         cls.cur_flow_depth += depth
 
     @property
-    def id(self):
-        return self._id
-
-    @property
-    def next_id(self):
-        return self._next_id
-
-    @property
     def flow_type(self):
         return self._flow_type
 
@@ -93,7 +100,7 @@ class FlowNode:
             render_param = {
                 "id": self._id,
                 # "text": f"{self._id} {self.text}  L{self._line_no} FLOW{self.flow_depth} IF{self.if_depth}\n{self._if_root_id_stack}",
-                "text": f"{self.text} L{self._line_no}",
+                "text": f"{self._text} L{self._line_no}",
                 "x": self.x,
                 "y": self.y,
             }
@@ -106,7 +113,7 @@ def contains_if_root(target_flow: FlowNode, ref_flow: FlowNode) -> bool:
     return set(target_flow._if_root_id_stack) >= set(ref_flow._if_root_id_stack)
 
 
-class Arrow:
+class Arrow(FlowShape):
     def __init__(self, id, source_id, target_id) -> None:
         self._id = id
         self._source_id = source_id
